@@ -69,7 +69,7 @@ def main():
         logger=logger
     )
 
-    # evaluate(model, './result/wide_lstm/best_validation_weights.pt', dev_dataset, estimator, 'cuda')
+    # evaluate(model, './result/LeakyReLU/best_validation_weights.pt', test_dataset, estimator, 'cuda')
 
 
 def set_random_seed(seed):

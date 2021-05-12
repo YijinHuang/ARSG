@@ -1,16 +1,16 @@
 BASIC_CONFIG = {
     'save_path': './result/test',
     'record_path': './result/log/test',
-    'num_classes': 42,  # number of categories
+    'num_classes': 34,  # number of categories
     'random_seed': 0,  # random seed for reproducibilty
     'device': 'cuda'  # 'cuda' / 'cpu'
 }
 
 DATA_CONFIG = {
     'train_data': './data/train.npy',
-    'train_label': './data/train_labels.npy',
+    'train_label': './data/train_transcripts.npy',
     'dev_data': './data/dev.npy',
-    'dev_label': './data/dev_labels.npy',
+    'dev_label': './data/dev_transcripts.npy',
     'test_data': './data/test.npy',
     'dimension': 40,
     'mean': 'auto',  # 'auto' or a list of three numbers for RGB
@@ -36,11 +36,11 @@ SCHEDULER_CONFIG = {
         'gamma': 0.9  # Multiplicative factor of learning rate decay
     },
     'multiple_steps': {
-        'milestones': [2, 12, 18],  # List of epoch indices. Must be increasing
+        'milestones': [50, 85, 100],  # List of epoch indices. Must be increasing
         'gamma': 0.5,  # Multiplicative factor of learning rate decay
     },
     'cosine': {
-        'T_max': 30,  # Maximum number of iterations.
+        'T_max': 100,  # Maximum number of iterations.
         'eta_min': 0  # Minimum learning rate.
     },
     'reduce_on_plateau': {
@@ -57,14 +57,14 @@ SCHEDULER_CONFIG = {
 }
 
 TRAIN_CONFIG = {
-    'epochs': 30,  # total training epochs
+    'epochs': 100,  # total training epochs
     'batch_size': 64,  # training batch size
     'optimizer': 'ADAM',  # SGD / ADAM
     'criterion': 'cross_entropy',  # one str name in CRITERION_CONFIG above.
     'criterion_config': CRITERION_CONFIG['cross_entropy'],  # loss function configurations, the key should the be same with criterion
-    'learning_rate': 0.002,  # initial learning rate
-    'lr_scheduler': 'cosine',  # one str name in SCHEDULER_CONFIG above
-    'lr_scheduler_config': SCHEDULER_CONFIG['cosine'],  # scheduler configurations, the key should the be same with lr_cheduler
+    'learning_rate': 0.001,  # initial learning rate
+    'lr_scheduler': 'multiple_steps',  # one str name in SCHEDULER_CONFIG above
+    'lr_scheduler_config': SCHEDULER_CONFIG['multiple_steps'],  # scheduler configurations, the key should the be same with lr_cheduler
     'momentum': 0.9,  # momentum for SGD optimizer
     'nesterov': True,  # nesterov for SGD optimizer
     'weight_decay': 0.000005,  # weight decay for SGD and ADAM

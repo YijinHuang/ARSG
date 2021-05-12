@@ -1,3 +1,4 @@
+from functools import reduce
 import os
 from numpy.core.numeric import Inf
 from numpy.lib.function_base import append
@@ -13,7 +14,7 @@ from utils import save_weights, print_msg
 
 
 def train(model, train_config, train_dataset, val_dataset, save_path, estimator, device, logger=None):
-    criterion = nn.CTCLoss()
+    criterion = nn.CrossEntropyLoss(reduction='none')
     optimizer = initialize_optimizer(train_config, model)
     lr_scheduler, warmup_scheduler = initialize_lr_scheduler(train_config, optimizer)
     train_loader, val_loader = initialize_dataloader(train_config, train_dataset, val_dataset)
@@ -22,21 +23,35 @@ def train(model, train_config, train_dataset, val_dataset, save_path, estimator,
     model.train()
     min_indicator = 999
     avg_loss, avg_dist = 0, 0
+    tf_prob = 0.9
     for epoch in range(train_config['epochs']):
         # warmup scheduler update
         if warmup_scheduler and not warmup_scheduler.is_finish():
             warmup_scheduler.step()
 
+        if epoch > 50:
+            tf_prob = 0.9 - 0.3 * ((epoch - 50) / (train_config['epochs'] - 50))
+
         epoch_loss = 0
         progress = tqdm(enumerate(train_loader))
         for step, train_data in progress:
-            spectrograms, labels, input_lengths, phoneme_lengths = train_data
+            spectrograms, labels, seq_lengths, gt_lengths = train_data
             spectrograms, labels = spectrograms.to(device), labels.to(device)
 
+            # mask
+            gt_mask = torch.arange(max(gt_lengths))[None, :] < gt_lengths[:, None]
+            gt_mask = gt_mask.to(device)
+
             # forward
-            y_pred, out_len = model(spectrograms, input_lengths)
-            y_pred = F.log_softmax(y_pred, dim=2)
-            loss = criterion(y_pred, labels, out_len, phoneme_lengths)
+            y_pred = model(spectrograms, seq_lengths, y=labels, tf_prob=tf_prob)
+
+            batch_size, seq_len, num_classes = y_pred.shape
+            y_pred = y_pred.view(batch_size * seq_len, num_classes)
+            labels = labels.view(batch_size * seq_len)
+            gt_mask = gt_mask.view(batch_size * seq_len)
+
+            loss = criterion(y_pred, labels)
+            loss = (gt_mask * loss).sum() / batch_size
 
             # backward
             optimizer.zero_grad()
@@ -101,11 +116,11 @@ def evaluate(model, checkpoint, test_dataset, estimator, device):
         num_workers=16,
         drop_last=False,
         pin_memory=True,
-        collate_fn=MelspectrogramsDataset.collate_fn
+        collate_fn=InferenceMelspectrogramsDataset.collate_fn
     )
 
     print('Running on Test set...')
-    eval(model, test_loader, estimator, device)
+    inference_eval(model, test_loader, estimator, device)
 
     print('========================================')
     print('Finished! test distance: {}'.format(estimator.get_dist(6)))
@@ -118,35 +133,39 @@ def eval(model, dataloader, estimator, device):
 
     estimator.reset()
     for test_data in dataloader:
-        spectrograms, labels, input_lengths, phoneme_lengths = test_data
-        spectrograms, labels = spectrograms.float().to(device), labels.to(device)
+        spectrograms, labels, seq_lengths, gt_lengths = test_data
+        spectrograms, labels = spectrograms.to(device), labels.to(device)
 
-        y_pred, out_len = model(spectrograms, input_lengths)
-        estimator.update(y_pred, labels, out_len)
+        # forward
+        y_pred = model(spectrograms, seq_lengths, mode='test')
+
+        estimator.update(y_pred, labels)
 
     model.train()
     torch.set_grad_enabled(True)
 
 
 def inference_eval(model, dataloader, estimator, device):
-    from phoneme_list import PHONEME_MAP
+    from char_map import CHAR_LIST
 
     model.eval()
     torch.set_grad_enabled(False)
 
     estimator.reset()
     preds = []
-    for test_data in dataloader:
-        spectrograms, input_lengths = test_data
-        spectrograms = spectrograms.float().to(device)
+    for test_data in tqdm(dataloader):
+        spectrograms, seq_lengths = test_data
+        spectrograms = spectrograms.to(device)
 
-        y_pred, out_len = model(spectrograms, input_lengths)
+        # forward
+        y_pred = model(spectrograms, seq_lengths, mode='test')
 
-        y_pred = y_pred.transpose(0, 1)
         y_pred = torch.softmax(y_pred, dim=2)
         batch_size = y_pred.shape[0]
-        beam_results, beam_scores, timesteps, out_lens = estimator.decoder.decode(y_pred, input_lengths)
-        preds += [estimator.convert_to_string(beam_results[i][0], PHONEME_MAP, out_lens[i][0]) for i in range(batch_size)]
+
+        input_lengths = estimator.length_to_eos(y_pred)
+        beam_results = estimator.greedy_search(y_pred, input_lengths)
+        preds += [estimator.convert_to_string(beam_results[i], CHAR_LIST) for i in range(batch_size)]
 
     submission = open('./submission.csv', 'w')
     submission.write('id,label\n')
