@@ -226,6 +226,20 @@ def initialize_optimizer(train_config, model):
             lr=learning_rate,
             weight_decay=weight_decay
         )
+    elif optimizer_strategy == 'ADADELTA':
+        optimizer = torch.optim.Adadelta(
+            model.parameters(),
+            lr=learning_rate,
+            rho=0.95,
+            eps=1e-8,
+            weight_decay=weight_decay
+        )
+    elif optimizer_strategy == 'ADAGRAD':
+        optimizer = torch.optim.Adagrad(
+            model.parameters(),
+            lr=learning_rate,
+            weight_decay=weight_decay
+        )
     else:
         raise NotImplementedError('Not implemented optimizer.')
 

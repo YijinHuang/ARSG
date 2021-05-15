@@ -1,53 +1,61 @@
+import jiwer
 import torch
 import numpy as np
 from Levenshtein import distance
-from torch.types import Number
 from char_map import CHAR_LIST, char_map
-
+from ctcdecode import CTCBeamDecoder
 
 class Estimator():
     def __init__(self, device='cpu'):
         self.device = device
-        self.total_dist = 0
-        self.num_samples = 0
+        self.preds = []
+        self.gts = []
+        self.decoder = CTCBeamDecoder(
+            CHAR_LIST,
+            beam_width=1,
+            num_processes=16,
+            blank_id=0,
+            log_probs_input=False
+        )
 
     def update(self, predictions, targets):
         predictions = torch.softmax(predictions, dim=2)
         batch_size = predictions.shape[0]
 
         input_lengths = self.length_to_eos(predictions)
-        results = self.greedy_search(predictions, input_lengths)
-        preds = [self.convert_to_string(results[i], CHAR_LIST) for i in range(batch_size)]
+        beam_results, beam_scores, timesteps, out_lens = self.decoder.decode(predictions, input_lengths)
+        preds = [self.convert_to_string(beam_results[i][0], CHAR_LIST, out_lens[i][0]) for i in range(batch_size)]
         print('======================')
         print(preds[0])
-        gts = [sent.replace('<sos>', '').replace('<eos>', '') for sent in self.to_char(targets.data)]
+        gts = [sent.replace('blank', '').replace('blank', '') for sent in self.to_char(targets.data)]
         print(gts[0])
 
         # update metrics
-        self.num_samples += batch_size
-        self.total_dist += sum([distance(preds[i], gts[i]) for i in range(batch_size)])
+        self.preds += preds
+        self.gts += gts
 
     def get_dist(self, digits=-1):
-        dist = self.total_dist / self.num_samples
-        dist = dist if digits == -1 else round(dist, digits)
-        return dist
+        # dist = self.total_dist / self.num_samples
+        err = jiwer.wer(self.gts, self.preds)
+        err = err if digits == -1 else round(err, digits)
+        return err
 
     def reset(self):
-        self.total_dist = 0
-        self.num_samples = 0
+        self.preds = []
+        self.gts = []
 
     def to_char(self, data):
         sentences = []
         for d in data:
-            sentence = "".join([CHAR_LIST[idx.item()] for idx in d])
+            sentence = " ".join([CHAR_LIST[idx.item()] for idx in d])
             sentences.append(sentence.strip())
         return sentences
 
-    def convert_to_string(self, tokens, vocab):
-        return ''.join([vocab[x] for x in tokens])
+    def convert_to_string(self, tokens, vocab, seq_len):
+        return ' '.join([vocab[x] for x in tokens[0:seq_len]])
 
     def length_to_eos(self, predictions):
-        eos_id = char_map['<eos>']
+        eos_id = char_map['blank']
 
         num_classes = predictions.shape[-1]
         eos = torch.eye(num_classes)[eos_id].cuda()
@@ -59,7 +67,7 @@ class Estimator():
         return length
 
     def greedy_search(self, predictions, input_lengths):
-        eos_id = char_map['<eos>']
+        eos_id = char_map['blank']
 
         results = []
         batch_size = predictions.shape[0]
@@ -81,7 +89,7 @@ class Estimator():
                 else:
                     result.append(pred)
                     prev = pred
-            
+
             results.append(result)
 
         return results

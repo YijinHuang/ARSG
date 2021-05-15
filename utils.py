@@ -11,8 +11,8 @@ from torchvision import datasets, transforms
 
 def mean_and_std(train_data):
     num_samples = 0.
-    mean = np.zeros(40)
-    std = np.zeros(40)
+    mean = torch.zeros(123)
+    std = torch.zeros(123)
     for X in tqdm(train_data):
         mean += X.sum(0)
         num_samples += X.shape[0]
@@ -20,7 +20,7 @@ def mean_and_std(train_data):
 
     for X in tqdm(train_data):
         std += ((X - mean) ** 2).sum(0)
-    std = np.sqrt(std / num_samples)
+    std = torch.sqrt(std / num_samples)
 
     mean, std = mean.tolist(), std.tolist()
     return mean, std

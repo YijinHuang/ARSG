@@ -30,6 +30,7 @@ class MelspectrogramsDataset(Dataset):
     def __init__(self, np_data, np_label, transform=None):
         super(MelspectrogramsDataset, self).__init__()
         self.data = [torch.FloatTensor(sample) for sample in np_data]
+        # self.label = self.label_map(np_label)
         self.label = self.label_map(np_label)
         self.transform = transform
 
@@ -47,25 +48,17 @@ class MelspectrogramsDataset(Dataset):
         return len(self.data)
 
     def collate_fn(batch):
-        max_len = max([b[2] for b in batch])
-        pad_len = math.ceil(max_len / 8) * 8
-        temp_tensor = torch.zeros(pad_len, 40)
-
-        spectrograms = rnn_utils.pad_sequence([b[0] for b in batch] + [temp_tensor], batch_first=True)[:-1].unsqueeze(1).transpose(2, 3)
+        spectrograms = rnn_utils.pad_sequence([b[0] for b in batch], batch_first=True).unsqueeze(1).transpose(2, 3)
         labels = rnn_utils.pad_sequence([b[1] for b in batch], batch_first=True)
         input_lengths = torch.as_tensor([b[2] for b in batch])
         phoneme_lengths = torch.as_tensor([b[3] for b in batch])
 
-        input_lengths = torch.ceil(input_lengths / 8) * 8
         return spectrograms, labels, input_lengths, phoneme_lengths
 
     def label_map(self, np_label):
         labels = []
-        for words in np_label:
-            chars = ' '.join([word.decode('UTF-8') for word in words])
-            label = [char_map[char] for char in chars]
-            # label = [char_map[char] for char in words[0]]
-            label.append(char_map['<eos>'])
+        for label in np_label:
+            label.append(char_map['blank'])
             labels.append(torch.as_tensor(label))
 
         return labels
@@ -89,14 +82,9 @@ class InferenceMelspectrogramsDataset(Dataset):
         return len(self.data)
 
     def collate_fn(batch):
-        max_len = max([b[1] for b in batch])
-        pad_len = math.ceil(max_len / 8) * 8
-        temp_tensor = torch.zeros(pad_len, 40)
-
-        spectrograms = rnn_utils.pad_sequence([b[0] for b in batch] + [temp_tensor], batch_first=True)[:-1].unsqueeze(1).transpose(2, 3)
+        spectrograms = rnn_utils.pad_sequence([b[0] for b in batch], batch_first=True).unsqueeze(1).transpose(2, 3)
         input_lengths = torch.as_tensor([b[1] for b in batch])
 
-        input_lengths = torch.ceil(input_lengths / 8) * 8
         return spectrograms, input_lengths
 
 
